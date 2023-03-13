@@ -1,12 +1,14 @@
-package mst;
+package main.java.mst;
 
-import utils.ConfigParser;
+import main.java.mst.MSTMessage;
+import main.java.utils.ConfigParser;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -24,10 +26,12 @@ public class MinimumSpanningTree {
         this.currentRound = 1;
         this.currentComponentId = uid;
         this.config = configParser;
+        this.objectOutputStreams = new HashMap<>();
     }
 
     public void start() {
         setupClientAndServerSockets();
+        runMST();
     }
 
     public void setupClientAndServerSockets() {
@@ -61,6 +65,7 @@ public class MinimumSpanningTree {
             try {
                 final ObjectOutputStream neighborOutputStream = new ObjectOutputStream(socketToNeighbor.getOutputStream());
                 objectOutputStreams.put(neighborDetails.getKey(), neighborOutputStream);
+                System.out.println("Added node " + neighborDetails.getKey() + " to socket connection.");
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -69,7 +74,8 @@ public class MinimumSpanningTree {
 
     public void runMST() {
         // if uid == component_id, first initiate a broadcast message to all neighbours (at the start, all nodes will do this)
-        // if the
+
+        System.out.println("Initiating MST Algorithm.");
 
     }
 

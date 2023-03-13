@@ -1,4 +1,4 @@
-package utils;
+package main.java.utils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -12,8 +12,10 @@ public class ConfigParser {
 
     List<String> fileLines;
 
+    // key = uid, value = hostname:port
     Map<Integer, String> neighbourNodeHostDetails = new HashMap<>();
 
+    // key = uid, value = edge weight
     Map<Integer, Integer> neighbourNodeEdgeWeights = new HashMap<>();
 
     int nodePort;
@@ -45,7 +47,7 @@ public class ConfigParser {
             BufferedReader reader = new BufferedReader(new FileReader(fileName));
             String line;
             while ((line = reader.readLine()) != null) {
-                if (!line.startsWith("#"))
+                if ( !line.isEmpty() && !line.startsWith("#"))
                     fileLines.add(line);
             }
             reader.close();
