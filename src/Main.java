@@ -1,6 +1,6 @@
-import javafx.util.Pair;
+import mst.MinimumSpanningTree;
+import utils.ConfigParser;
 
-import java.util.List;
 import java.util.Map;
 
 public class Main {
@@ -15,17 +15,20 @@ public class Main {
 
         System.out.println("Neighbouring node connection");
         Map<Integer, String> hostDetailsMap = configParser.getNeighbourNodeHostDetails();
-        for(Map.Entry<Integer, String> m: hostDetailsMap.entrySet()){
+        for (Map.Entry<Integer, String> m : hostDetailsMap.entrySet()) {
             System.out.println("uid : " + m.getKey() + ", connection : " + m.getValue());
         }
 
         System.out.println("Neighbouring node Edge Weights");
-        for(Map.Entry<Integer, Integer> m: configParser.getNeighbourNodeEdgeWeights().entrySet()){
+        for (Map.Entry<Integer, Integer> m : configParser.getNeighbourNodeEdgeWeights().entrySet()) {
             System.out.println("Neigh Node : " + m.getKey() + ", Weight : " + m.getValue());
         }
 
         System.out.println("Node Port : " + configParser.getNodePort());
 
+        MinimumSpanningTree mst = new MinimumSpanningTree(configParser, nodeUID);
+
+        mst.start();
 
     }
 }

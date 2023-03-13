@@ -1,3 +1,4 @@
+package utils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -17,15 +18,10 @@ public class ConfigParser {
 
     int nodePort;
 
-    public ConfigParser(String fileName){
+    public ConfigParser(String fileName) {
         this.fileName = fileName;
         this.fileLines = new ArrayList<>(Collections.emptyList());
     }
-
-    public List<String> getFileLines() {
-        return fileLines;
-    }
-
 
     public Map<Integer, Integer> getNeighbourNodeEdgeWeights() {
         return neighbourNodeEdgeWeights;
@@ -41,8 +37,9 @@ public class ConfigParser {
 
     public void parseConfig(int uid) throws Exception {
 
-        if (! new File(fileName).exists()){
-            throw new Exception("Config file doesn't exist.");
+        if (!new File(fileName).exists()) {
+            System.out.println("Config file doesn't exist.");
+            System.exit(-1);
         }
         try {
             BufferedReader reader = new BufferedReader(new FileReader(fileName));
@@ -61,27 +58,27 @@ public class ConfigParser {
         Map<Integer, String> nodeHostDetails = new HashMap<>();
 
         // get all node connection
-        for ( String s: fileLines.subList(1, 1+totalNodes)){
+        for (String s : fileLines.subList(1, 1 + totalNodes)) {
             String[] split = s.split(" ");
             nodeHostDetails.put(Integer.parseInt(split[0]), split[1] + ":" + split[2]);
         }
 
         // get all neighbouring nodes and edge-weights
-        for ( String s: fileLines.subList(1+totalNodes, fileLines.size())){
+        for (String s : fileLines.subList(1 + totalNodes, fileLines.size())) {
             String[] split = s.split(" ");
             int weight = Integer.parseInt(split[1]);
             String node = split[0];
-            node = node.substring(1, node.length()-1);
+            node = node.substring(1, node.length() - 1);
             String[] n = node.split(",");
-            if ( Integer.parseInt(n[0]) == uid){
+            if (Integer.parseInt(n[0]) == uid) {
                 neighbourNodeEdgeWeights.put(Integer.parseInt(n[1]), weight);
-            }else if ( Integer.parseInt(n[1]) == uid){
+            } else if (Integer.parseInt(n[1]) == uid) {
                 neighbourNodeEdgeWeights.put(Integer.parseInt(n[0]), weight);
             }
         }
 
         // extract only the neighbours
-        for ( int n : neighbourNodeEdgeWeights.keySet()){
+        for (int n : neighbourNodeEdgeWeights.keySet()) {
             neighbourNodeHostDetails.put(n, nodeHostDetails.get(n));
         }
 
