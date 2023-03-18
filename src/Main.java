@@ -1,7 +1,5 @@
-package main.java;
-
-import main.java.mst.MinimumSpanningTree;
-import main.java.utils.ConfigParser;
+import mst.MinimumSpanningTree;
+import utils.ConfigParser;
 
 import java.util.Map;
 

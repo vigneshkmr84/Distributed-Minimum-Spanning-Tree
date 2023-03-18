@@ -1,4 +1,4 @@
-package main.java.mst;
+package mst;
 
 import java.io.Serializable;
 

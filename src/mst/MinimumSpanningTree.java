@@ -1,7 +1,7 @@
-package main.java.mst;
+package mst;
 
-import main.java.mst.MSTMessage;
-import main.java.utils.ConfigParser;
+import mst.MSTMessage;
+import utils.ConfigParser;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
