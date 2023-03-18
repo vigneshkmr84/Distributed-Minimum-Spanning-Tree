@@ -26,7 +26,7 @@ public class Main {
 
         System.out.println("Node Port : " + configParser.getNodePort());
 
-        MinimumSpanningTree mst = new MinimumSpanningTree(configParser, nodeUID);
+        MinimumSpanningTree mst = new MinimumSpanningTree(configParser);
 
         mst.start();
 

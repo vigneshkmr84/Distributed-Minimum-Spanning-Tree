@@ -1,6 +1,7 @@
 package mst;
 
 import mst.MSTMessage;
+import mst.MSTMessageType;
 import utils.ConfigParser;
 
 import java.io.IOException;
@@ -10,6 +11,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -19,12 +21,13 @@ public class MinimumSpanningTree {
     public BlockingQueue<MSTMessage> messageQueue;
     public int currentRound;
     int currentComponentId;
+    public Set<Integer> mstChildren;
     private Map<Integer, ObjectOutputStream> objectOutputStreams;
 
-    public MinimumSpanningTree(ConfigParser configParser, int uid) {
+    public MinimumSpanningTree(ConfigParser configParser) {
         this.messageQueue = new LinkedBlockingQueue<>();
         this.currentRound = 1;
-        this.currentComponentId = uid;
+        this.currentComponentId = configParser.UID;
         this.config = configParser;
         this.objectOutputStreams = new HashMap<>();
     }
@@ -49,7 +52,6 @@ public class MinimumSpanningTree {
             // The neighbors server might not have started yet, so we perform a Retry storm to create the connection.
             while (true) {
                 try {
-
                     socketToNeighbor = new Socket(connString.split(":")[0], Integer.parseInt(connString.split(":")[1]));
                     break;
                 } catch (Exception e) {
@@ -77,16 +79,55 @@ public class MinimumSpanningTree {
 
         System.out.println("Initiating MST Algorithm.");
 
+        broadcastTestForCurrentPhase = false;
+
+        while (true) {
+            if (config.UID == currentComponentId & !broadcastTestForCurrentPhase) {
+                MSTMessage mstMessage = new MSTMessage(currentRound, config.UID, currentComponentId, MSTMessageType.BROADCAST_TESTING);
+
+                if (mstChildren.size() > 0) {
+                    broadCastMessageToSomeNeighbors(mstMessage, mstChildren);
+                } else {
+                    messageQueue.offer(mstMessage);
+                }
+
+                broadcastTestForCurrentPhase = true;
+            }
+
+            MSTMessage message = messageQueue.poll();
+
+            switch (message) {
+                case BROADCAST_TESTING:
+                    // Dummy thing will be changed
+                    broadCastMessageToSomeNeighbors(message, mstChildren);
+                    break;
+            }
+
+        }
     }
 
     // broadcast message to all neighbours
-    public void broadCastMessage(MSTMessage m){
+    public void broadCastMessageToAllNeighbors(MSTMessage m){
         try {
             for (ObjectOutputStream outputStream: objectOutputStreams.values()) {
                 outputStream.writeObject(m);
                 outputStream.flush();
             }
         } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void broadCastMessageToSomeNeighbors(MSTMessage m, Set<Integer> neighborUIDSet) {
+        ObjectOutputStream objectOutputStream;
+
+        try {
+            for (Integer neighborUID: neighborUIDSet) {
+                objectOutputStream = objectOutputStreams.get(neighborUID);
+                objectOutputStream.writeObject(m);
+                objectOutputStream.flush();
+            }
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

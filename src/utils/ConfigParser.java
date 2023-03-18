@@ -19,6 +19,7 @@ public class ConfigParser {
     Map<Integer, Integer> neighbourNodeEdgeWeights = new HashMap<>();
 
     int nodePort;
+    int UID;
 
     public ConfigParser(String fileName) {
         this.fileName = fileName;
@@ -38,7 +39,8 @@ public class ConfigParser {
     }
 
     public void parseConfig(int uid) throws Exception {
-
+        UID = uid;
+        
         if (!new File(fileName).exists()) {
             System.out.println("Config file doesn't exist.");
             System.exit(-1);
