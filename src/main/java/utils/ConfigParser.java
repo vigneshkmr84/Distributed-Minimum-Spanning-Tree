@@ -38,6 +38,10 @@ public class ConfigParser {
         return nodePort;
     }
 
+    public int getUID() {
+        return UID;
+    }
+
     public void parseConfig(int uid) throws Exception {
         UID = uid;
         
