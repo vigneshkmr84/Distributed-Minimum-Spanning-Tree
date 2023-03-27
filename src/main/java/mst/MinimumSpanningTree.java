@@ -26,6 +26,7 @@ public class MinimumSpanningTree {
     Integer currentComponentId;
     private Map<Integer, ObjectOutputStream> objectOutputStreams;
     Set<Integer> neighborUIDs;
+    Set<Integer> neighborsAvailableForTesting;
 
     public MinimumSpanningTree(ConfigParser configParser) {
         this.messageQueue = new LinkedBlockingQueue<>();
@@ -34,6 +35,7 @@ public class MinimumSpanningTree {
         this.config = configParser;
         this.objectOutputStreams = new HashMap<>();
         this.neighborUIDs = Collections.unmodifiableSet(config.getNeighbourNodeHostDetails().keySet());
+        this.neighborsAvailableForTesting = config.getNeighbourNodeHostDetails().keySet();
     }
 
     public void start() {
@@ -84,14 +86,16 @@ public class MinimumSpanningTree {
     Integer mstParent = null;
     Set<Integer> mstChildren = new HashSet<>();
 
-    boolean broadcastTestForCurrentPhase = false;
-    Set<Integer> neighborsAvailableForTesting = config.getNeighbourNodeHostDetails().keySet();
+    boolean broadcastedTestForCurrentPhase = false;
+    boolean newRoundStarted = false;
     Integer numberOfTestingRepliesReceived = 0;
     Map<Integer, List<MSTMessage>> nextRoundMessageBuffers = new HashMap<>();
-    Set<Integer> outgoingNeighborsInCurrentRound = new HashSet<>();
     Set<Integer> incomingNeighborsInCurrentRound = new HashSet<>();
     
+    Integer mstTestParentMessageUID = null;
     Set<Integer> neighborsRequiringTestingReplies = new HashSet<>();
+    Set<Integer> neighborsAcknowledgingTestingMessages = new HashSet<>();
+    Set<Integer> mstNeighborsRequestingConvergcastToLeader = new HashSet<>();
     List<Integer> outgoingNeighborsMaxWeight = null;
 
     public void runMST() {
@@ -100,21 +104,23 @@ public class MinimumSpanningTree {
         System.out.println("Initiating MST Algorithm.");
 
         while (true) {
-            if (config.getUID() == currentComponentId & !broadcastTestForCurrentPhase) {
-                MSTMessage mstMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_TESTING);
 
-                if (mstChildren.size() > 0) {
-                    sendMessageToSomeNeighbors(mstMessage, mstChildren);
-                } else {
-                    // This "sends" a message to ourself, so that we can avoid writing separate conditions to handle phase 0.
-                    messageQueue.offer(mstMessage);
-                }
-
-                broadcastTestForCurrentPhase = true;
+            if (newRoundStarted) {
+                handleRoundBeginning();
+                newRoundStarted = false;
             }
 
-            MSTMessage message = messageQueue.poll();
+            MSTMessage message;
+            if (nextRoundMessageBuffers.containsKey(currentRound) && nextRoundMessageBuffers.get(currentRound).size() > 0) {
+                message = nextRoundMessageBuffers.get(currentRound).remove(0);
+            } else {
+                message = messageQueue.poll();
+            }
 
+            if (message == null) {
+                continue;
+            }
+  
             boolean isMessageBuffered = checkMessageRound(message);
             if (isMessageBuffered) {
                 continue;
@@ -122,52 +128,102 @@ public class MinimumSpanningTree {
 
             handleMessage(message, neighborsAvailableForTesting);
 
-
-            //Handling Round
+            //Handling round end
             if (incomingNeighborsInCurrentRound.size() == neighborUIDs.size()) {
                 currentRound++;
 
-                if (neighborsRequiringTestingReplies.size() > 0) {
-                    MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TEST_MESSAGE_REPLY);
-                    sendMessageToSomeNeighbors(replyMessage, neighborUIDs);
-                }
+                newRoundStarted = true;
+                incomingNeighborsInCurrentRound.clear();
             }
         }
     }
 
-    public void handleMessage(MSTMessage message, Set<Integer> neighborsAvailableForTesting) {
+    public void handleRoundBeginning() {
+        Set<Integer> testingMessagesToLeader = null;
+        Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>(neighborUIDs);
+
+        if (neighborsAcknowledgingTestingMessages.size() > 0) {
+            testingMessagesToLeader = new HashSet<>(neighborsAcknowledgingTestingMessages);
+            testingMessagesToLeader.addAll(mstNeighborsRequestingConvergcastToLeader);
+        }
+
+        if (!broadcastedTestForCurrentPhase && mstTestParentMessageUID != null) {
+            Set<Integer> outgoingNeighbors = handleBroadcastTesting();
+            broadcastedTestForCurrentPhase = true;
+            nodesNotCommunicatedInThisRound.removeAll(outgoingNeighbors);
+        }
+        
+        if (neighborsRequiringTestingReplies.size() > 0) {
+            MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TEST_MESSAGE_REPLY);
+            sendMessageToSomeNeighbors(replyMessage, neighborsRequiringTestingReplies);
+            nodesNotCommunicatedInThisRound.removeAll(neighborsRequiringTestingReplies);
+            neighborsRequiringTestingReplies.clear();
+        } 
+        
+        if (mstNeighborsRequestingConvergcastToLeader.equals(mstChildren) && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
+            MSTMessage convergecastMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.CONVERGECAST_MAX_TO_LEADER, outgoingNeighborsMaxWeight);
+            sendMessageToSomeNeighbors(convergecastMessage, Set.of(mstParent));
+
+            nodesNotCommunicatedInThisRound.remove(mstParent);
+
+            mstNeighborsRequestingConvergcastToLeader.clear();
+            neighborsAcknowledgingTestingMessages.clear();
+        }
+
+        if (nodesNotCommunicatedInThisRound.size() > 0) {
+            MSTMessage updateMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
+            sendMessageToSomeNeighbors(updateMessage, nodesNotCommunicatedInThisRound);
+        }
+    }
+
+    /** This function handles the message sending portion for the broadcast testing round.
+     * This is the round where the leader node or any other node informs its neighbors that they need to test of MWOE.
+     */
+    public Set<Integer> handleBroadcastTesting() {
+        Set<Integer> outgoingNeighborsInCurrentRound = new HashSet<>();
         MSTMessage replyMessage;
+        if (mstChildren.size() > 0) {
+            replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_TESTING);
+            sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
+            outgoingNeighborsInCurrentRound.addAll(mstChildren);
+        }
+
+        if (neighborsAvailableForTesting.size() > 0) {
+            replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TESTING_NEIGHBORS);
+            sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
+            outgoingNeighborsInCurrentRound.addAll(neighborsAvailableForTesting);
+        } 
+
+        Set<Integer> remainingNodes = new HashSet<>(neighborUIDs);
+        remainingNodes.removeAll(outgoingNeighborsInCurrentRound);
+
+        if (remainingNodes.size() > 0) {
+            replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
+            sendMessageToSomeNeighbors(replyMessage, remainingNodes);
+        }
+
+        outgoingNeighborsInCurrentRound.addAll(remainingNodes);
+
+        return outgoingNeighborsInCurrentRound;
+    }
+
+    public void handleMessage(MSTMessage message, Set<Integer> neighborsAvailableForTesting) {
+        System.out.println("Processing message from " + message.uid + " " + message.round + " " + message.messageType);
+        List<Integer> messageWeight;
         
         switch (message.messageType) {
             // First, we need to send the broadcast testing message to the children in the MST.
             // Then, we need to test the rest of our incident edges in case we have not rejected them earlier.
             case BROADCAST_TESTING:
-                if (mstChildren.size() > 0) {
-                    replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_TESTING);
-                    sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
-                    outgoingNeighborsInCurrentRound.addAll(mstChildren);
-                }
-
-                if (neighborsAvailableForTesting.size() > 0) {
-                    replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TESTING_NEIGHBORS);
-                    sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
-                    outgoingNeighborsInCurrentRound.addAll(neighborsAvailableForTesting);
-                } 
-
-                Set<Integer> remainingNodes = new HashSet<>(neighborUIDs);
-                remainingNodes.removeAll(outgoingNeighborsInCurrentRound);
-
-                if (remainingNodes.size() > 0) {
-                    replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
-                    sendMessageToSomeNeighbors(replyMessage, remainingNodes);
-                }
-
-                outgoingNeighborsInCurrentRound.addAll(remainingNodes);
+                incomingNeighborsInCurrentRound.add(message.uid);
+                mstTestParentMessageUID = message.uid;
+                neighborsAvailableForTesting.remove(message.uid);
                 break;
             case TEST_MESSAGE_REPLY:
                 incomingNeighborsInCurrentRound.add(message.uid);
+                neighborsAcknowledgingTestingMessages.add(message.uid);
                 
-                List<Integer> messageWeight = Arrays.asList
+                messageWeight = Arrays.asList
                     (config.getNeighbourNodeEdgeWeights().get(message.uid), config.getUID(), message.uid);
                 outgoingNeighborsMaxWeight = outgoingNeighborsMaxWeight==null ? 
                     messageWeight : MSTUtils.compareWeights(messageWeight, outgoingNeighborsMaxWeight);
@@ -176,7 +232,13 @@ public class MinimumSpanningTree {
                 break;
             case BROADCAST_NEW_LEADER:
                 break;
-            case CONVERGECAST_LEADER:
+            case CONVERGECAST_MAX_TO_LEADER:
+                incomingNeighborsInCurrentRound.add(message.uid);
+                mstNeighborsRequestingConvergcastToLeader.add(message.uid);
+                
+                messageWeight = message.maxWeight;
+                outgoingNeighborsMaxWeight = outgoingNeighborsMaxWeight==null ? 
+                    messageWeight : MSTUtils.compareWeights(messageWeight, outgoingNeighborsMaxWeight);
                 break;
             case MERGE_COMPONENT:
                 break;
@@ -198,11 +260,6 @@ public class MinimumSpanningTree {
         if (message.round < currentRound) {
             throw new Error("A message from previous round is received. Please check the algorithm!");
         } else if (message.round > currentRound) {
-            if (message.messageType == MSTMessageType.UPDATE_ROUND) {
-                currentRound++;
-                return true;
-            }
-
             List<MSTMessage> buffer;
 
             if (nextRoundMessageBuffers.containsKey(message.round)) {
@@ -286,12 +343,10 @@ class SocketListener implements Runnable {
 class ClientHandler implements Runnable {
     BlockingQueue<MSTMessage> queue;
     Socket socket;
-    Boolean bfsMessageSeen;
 
     ClientHandler(BlockingQueue<MSTMessage> queue, Socket socket) {
         this.queue = queue;
         this.socket = socket;
-        this.bfsMessageSeen = false;
     }
 
     @Override
@@ -308,18 +363,8 @@ class ClientHandler implements Runnable {
         while (true) {
             try {
                 Object inputObject = inputStream.readObject();
-
-                if (!bfsMessageSeen) {
-                    try {
-                        MSTMessage message = (MSTMessage) inputObject;
-                        queue.offer(message);
-                    } catch (ClassCastException e) {
-                        bfsMessageSeen = true;
-                    }
-                } else {
-                    MSTMessage message = (MSTMessage) inputObject;
-                    queue.offer(message);
-                }
+                MSTMessage message = (MSTMessage) inputObject;
+                queue.offer(message);
             } catch (Exception e) {
                 e.printStackTrace();
             }

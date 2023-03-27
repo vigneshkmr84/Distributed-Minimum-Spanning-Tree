@@ -12,7 +12,7 @@ CONFIG_LOCAL=$HOME/Desktop/DC-Minimum-Spanning-Tree/config.txt
 CONFIG_DC=$PROJECT_DIR/config.txt
 
 # Directory your java classes are in
-BINARY_DIR=$PROJECT_DIR/bin
+BINARY_DIR=$PROJECT_DIR/target/mst.jar
 
 # Your main project class
 PROGRAM=Main
