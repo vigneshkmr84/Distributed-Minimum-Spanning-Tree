@@ -205,7 +205,7 @@ public class MinimumSpanningTree {
         else if (((mstNeighbors.size() > 0 && mstNeighborsRequestingConvergcastToLeader.equals(mstNeighbors)) || mstNeighbors.size() == 0)  && 
         neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
             MSTMessage convergecastMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.CONVERGECAST_MAX_TO_LEADER, outgoingNeighborsMaxWeight);
-            sendMessageToSomeNeighbors(convergecastMessage, Set.of(mstTestParentMessageUID));
+            sendMessageToSomeNeighbors(convergecastMessage, new HashSet<Integer>(Arrays.asList(mstTestParentMessageUID)));
 
             nodesNotCommunicatedInThisRound.remove(mstTestParentMessageUID);
 
@@ -278,7 +278,7 @@ public class MinimumSpanningTree {
         MSTMessage mergeMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.MERGE_COMPONENT);
 
         Integer nodeToSendMergeMessage = config.getUID() != outgoingNeighborsMaxWeight.get(1) ? outgoingNeighborsMaxWeight.get(1) : outgoingNeighborsMaxWeight.get(2);
-        sendMessageToSomeNeighbors(mergeMessage, Set.of(nodeToSendMergeMessage));
+        sendMessageToSomeNeighbors(mergeMessage, new HashSet<Integer>(Arrays.asList(nodeToSendMergeMessage)));
 
         mstNeighbors.add(nodeToSendMergeMessage);
         neighborsAvailableForTesting.remove(nodeToSendMergeMessage);
