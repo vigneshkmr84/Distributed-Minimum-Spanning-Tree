@@ -18,6 +18,7 @@ public class ConfigParser {
     // key = uid, value = edge weight
     Map<Integer, Integer> neighbourNodeEdgeWeights = new HashMap<>();
 
+    int totalNodes;
     int nodePort;
     int UID;
 
@@ -42,6 +43,10 @@ public class ConfigParser {
         return UID;
     }
 
+    public int getTotalNodes() {
+        return totalNodes;
+    }
+
     public void parseConfig(int uid) throws Exception {
         UID = uid;
         
@@ -61,7 +66,7 @@ public class ConfigParser {
             e.printStackTrace();
         }
 
-        int totalNodes = Integer.parseInt(fileLines.get(0));
+        totalNodes = Integer.parseInt(fileLines.get(0));
 
         Map<Integer, String> nodeHostDetails = new HashMap<>();
 

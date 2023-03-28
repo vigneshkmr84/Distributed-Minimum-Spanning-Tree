@@ -83,8 +83,7 @@ public class MinimumSpanningTree {
     Integer currentRound = 1;
     Integer currentPhase = 1;
 
-    Integer mstParent = null;
-    Set<Integer> mstChildren = new HashSet<>();
+    Set<Integer> mstNeighbors = new HashSet<>();
 
     boolean broadcastedTestForCurrentPhase = false;
     boolean newRoundStarted = false;
@@ -96,7 +95,19 @@ public class MinimumSpanningTree {
     Set<Integer> neighborsRequiringTestingReplies = new HashSet<>();
     Set<Integer> neighborsAcknowledgingTestingMessages = new HashSet<>();
     Set<Integer> mstNeighborsRequestingConvergcastToLeader = new HashSet<>();
+    Set<Integer> acknowledgeMergeToComponent = new HashSet<>();
     List<Integer> outgoingNeighborsMaxWeight = null;
+
+    Integer countRoundsToEndPhase = 0;
+    Integer countRoundsToBroadcastNewLeader = 0;
+    Boolean startCounterToBroadcastNewLeader = false;
+    Boolean startCounterToEndPhase = false;
+
+    Boolean broadcastNewLeaderToNeighbors = false;
+    Integer parentNeighborForBroadcastNewLeader = null;
+
+    Boolean broadcastMergeToAllNeighbors = false;
+    Integer parentNeighborForBroadcastMerge = null;
 
     public void runMST() {
         // if uid == component_id, first initiate a broadcast message to all neighbours (at the start, all nodes will do this)
@@ -134,6 +145,9 @@ public class MinimumSpanningTree {
 
                 newRoundStarted = true;
                 incomingNeighborsInCurrentRound.clear();
+
+                countRoundsToBroadcastNewLeader += startCounterToBroadcastNewLeader ? 1 : 0;
+                countRoundsToEndPhase += startCounterToEndPhase ? 1 : 0;
             }
         }
     }
@@ -147,7 +161,8 @@ public class MinimumSpanningTree {
             testingMessagesToLeader.addAll(mstNeighborsRequestingConvergcastToLeader);
         }
 
-        if (!broadcastedTestForCurrentPhase && mstTestParentMessageUID != null) {
+        if (!broadcastedTestForCurrentPhase && (config.getUID()==currentComponentId || mstTestParentMessageUID != null)) {
+            System.out.println("Sending mst children to broadcast testing message and tesing the edge weights of others");
             Set<Integer> outgoingNeighbors = handleBroadcastTesting();
             broadcastedTestForCurrentPhase = true;
             nodesNotCommunicatedInThisRound.removeAll(outgoingNeighbors);
@@ -160,20 +175,115 @@ public class MinimumSpanningTree {
             neighborsRequiringTestingReplies.clear();
         } 
         
-        if (mstNeighborsRequestingConvergcastToLeader.equals(mstChildren) && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
+        
+        // If the leader node has no children, i.e. the MST is empty.
+        if (config.getUID() == currentComponentId && mstNeighbors.size() == 0 && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
+            currentComponentId = Math.max(currentComponentId, outgoingNeighborsMaxWeight.get(2));
+            
+            Integer newNode = handleMergeMessage();
+            nodesNotCommunicatedInThisRound.remove(newNode);
+
+            startCounterToBroadcastNewLeader = true;
+            neighborsAcknowledgingTestingMessages.clear();
+        } //The leader is part of a MST and all the children and his other neighbors have acknowledged the testing message.
+        else if (config.getUID() == currentComponentId && mstNeighbors.size() > 0 && mstNeighborsRequestingConvergcastToLeader.equals(mstNeighbors) && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
+            currentComponentId = Math.max(currentComponentId, outgoingNeighborsMaxWeight.get(2));
+
+            if (neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMaxWeight.get(1)) || neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMaxWeight.get(2))) {
+                Integer newNode = handleMergeMessage();
+                nodesNotCommunicatedInThisRound.remove(newNode);
+            } else {
+                MSTMessage broadcastMergeMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_MERGE);
+                sendMessageToSomeNeighbors(broadcastMergeMessage, mstNeighbors);
+                nodesNotCommunicatedInThisRound.removeAll(mstNeighbors);
+            }
+
+            startCounterToBroadcastNewLeader = true;
+            mstNeighborsRequestingConvergcastToLeader.clear();
+            neighborsAcknowledgingTestingMessages.clear();
+        } // If I am a leaf node who has received a reply from all my outgoing edges or a intermediate node in the MST who has received a reply, I perform the convergecast.
+        else if (((mstNeighbors.size() > 0 && mstNeighborsRequestingConvergcastToLeader.equals(mstNeighbors)) || mstNeighbors.size() == 0)  && 
+        neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
             MSTMessage convergecastMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.CONVERGECAST_MAX_TO_LEADER, outgoingNeighborsMaxWeight);
-            sendMessageToSomeNeighbors(convergecastMessage, Set.of(mstParent));
+            sendMessageToSomeNeighbors(convergecastMessage, Set.of(mstTestParentMessageUID));
 
-            nodesNotCommunicatedInThisRound.remove(mstParent);
+            nodesNotCommunicatedInThisRound.remove(mstTestParentMessageUID);
 
+            mstTestParentMessageUID = null;
             mstNeighborsRequestingConvergcastToLeader.clear();
             neighborsAcknowledgingTestingMessages.clear();
         }
+
+        if (broadcastMergeToAllNeighbors) {
+            Set<Integer> neighborsToSendMessage = new HashSet<>(mstNeighbors);
+            neighborsToSendMessage.remove(parentNeighborForBroadcastMerge);
+
+            // This means that I am a leaf node and I should send merge message to outgoing neighbor of the message.
+            if (neighborsToSendMessage.size() == 0) {
+                handleMergeMessage();
+            } else {
+                MSTMessage broadcastMergeMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_MERGE);
+                sendMessageToSomeNeighbors(broadcastMergeMessage, neighborsToSendMessage);
+                nodesNotCommunicatedInThisRound.removeAll(neighborsToSendMessage);
+            }
+
+            startCounterToBroadcastNewLeader = true;
+            broadcastMergeToAllNeighbors = false;
+        }
+
+        if (broadcastNewLeaderToNeighbors) {
+            Set<Integer> neighborsToSendMessage = new HashSet<>(mstNeighbors);
+            neighborsToSendMessage.remove(parentNeighborForBroadcastNewLeader);
+
+            if (neighborsToSendMessage.size() != 0) {
+                MSTMessage broadcastLeaderMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_NEW_LEADER);
+                sendMessageToSomeNeighbors(broadcastLeaderMessage, neighborsToSendMessage);
+                nodesNotCommunicatedInThisRound.removeAll(neighborsToSendMessage);
+            } 
+
+            startCounterToEndPhase = true;
+            broadcastNewLeaderToNeighbors = false;
+        }
+
+        if (countRoundsToBroadcastNewLeader == (config.getTotalNodes() + 1) && config.getUID() == currentComponentId) {
+            MSTMessage broadcastMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_NEW_LEADER);
+            sendMessageToSomeNeighbors(broadcastMessage, mstNeighbors);
+            nodesNotCommunicatedInThisRound.removeAll(mstNeighbors);
+
+            startCounterToEndPhase = true;
+            countRoundsToBroadcastNewLeader = 0;
+            startCounterToBroadcastNewLeader = false;
+        }
+
+        if (countRoundsToEndPhase == (config.getTotalNodes() + 1)) {
+            startCounterToEndPhase = false;
+            broadcastedTestForCurrentPhase = false;
+            System.out.print("The Phase has ended, we are moving to the new phase.");
+            currentPhase += 1;
+        }
+
+        //Temp code to test how the MST algorithm works.
+        if (currentPhase == 3) {
+            System.exit(0);
+        }
+
 
         if (nodesNotCommunicatedInThisRound.size() > 0) {
             MSTMessage updateMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
             sendMessageToSomeNeighbors(updateMessage, nodesNotCommunicatedInThisRound);
         }
+    }
+
+    public Integer handleMergeMessage() {
+        MSTMessage mergeMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.MERGE_COMPONENT);
+
+        Integer nodeToSendMergeMessage = config.getUID() != outgoingNeighborsMaxWeight.get(1) ? outgoingNeighborsMaxWeight.get(1) : outgoingNeighborsMaxWeight.get(2);
+        sendMessageToSomeNeighbors(mergeMessage, Set.of(nodeToSendMergeMessage));
+
+        mstNeighbors.add(nodeToSendMergeMessage);
+        neighborsAvailableForTesting.remove(nodeToSendMergeMessage);
+
+        return nodeToSendMergeMessage;
     }
 
     /** This function handles the message sending portion for the broadcast testing round.
@@ -182,10 +292,10 @@ public class MinimumSpanningTree {
     public Set<Integer> handleBroadcastTesting() {
         Set<Integer> outgoingNeighborsInCurrentRound = new HashSet<>();
         MSTMessage replyMessage;
-        if (mstChildren.size() > 0) {
+        if (mstNeighbors.size() > 0) {
             replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_TESTING);
             sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
-            outgoingNeighborsInCurrentRound.addAll(mstChildren);
+            outgoingNeighborsInCurrentRound.addAll(mstNeighbors);
         }
 
         if (neighborsAvailableForTesting.size() > 0) {
@@ -210,30 +320,35 @@ public class MinimumSpanningTree {
     public void handleMessage(MSTMessage message, Set<Integer> neighborsAvailableForTesting) {
         System.out.println("Processing message from " + message.uid + " " + message.round + " " + message.messageType);
         List<Integer> messageWeight;
-        
+        incomingNeighborsInCurrentRound.add(message.uid);
+
         switch (message.messageType) {
             // First, we need to send the broadcast testing message to the children in the MST.
             // Then, we need to test the rest of our incident edges in case we have not rejected them earlier.
             case BROADCAST_TESTING:
-                incomingNeighborsInCurrentRound.add(message.uid);
                 mstTestParentMessageUID = message.uid;
                 neighborsAvailableForTesting.remove(message.uid);
                 break;
             case TEST_MESSAGE_REPLY:
-                incomingNeighborsInCurrentRound.add(message.uid);
                 neighborsAcknowledgingTestingMessages.add(message.uid);
                 
                 messageWeight = Arrays.asList
-                    (config.getNeighbourNodeEdgeWeights().get(message.uid), config.getUID(), message.uid);
+                    (config.getNeighbourNodeEdgeWeights().get(message.uid), Math.min(config.getUID(), message.uid), Math.max(config.getUID(), message.uid));
                 outgoingNeighborsMaxWeight = outgoingNeighborsMaxWeight==null ? 
                     messageWeight : MSTUtils.compareWeights(messageWeight, outgoingNeighborsMaxWeight);
                 break;
-            case BROADCAST_COMPLETION:
-                break;
             case BROADCAST_NEW_LEADER:
+                currentComponentId = Math.max(currentComponentId, message.componentId);
+                broadcastNewLeaderToNeighbors = true;
+                parentNeighborForBroadcastNewLeader = message.uid;
+                break;
+            case BROADCAST_MERGE:
+                currentComponentId = Math.max(currentComponentId, message.componentId);
+                outgoingNeighborsMaxWeight = message.maxWeight;
+                broadcastMergeToAllNeighbors = true;
+                parentNeighborForBroadcastMerge = message.uid;
                 break;
             case CONVERGECAST_MAX_TO_LEADER:
-                incomingNeighborsInCurrentRound.add(message.uid);
                 mstNeighborsRequestingConvergcastToLeader.add(message.uid);
                 
                 messageWeight = message.maxWeight;
@@ -241,13 +356,13 @@ public class MinimumSpanningTree {
                     messageWeight : MSTUtils.compareWeights(messageWeight, outgoingNeighborsMaxWeight);
                 break;
             case MERGE_COMPONENT:
+                currentComponentId = Math.max(currentComponentId, message.componentId);
+                startCounterToBroadcastNewLeader = true;
                 break;
             case TESTING_NEIGHBORS:
-                incomingNeighborsInCurrentRound.add(message.uid);
                 neighborsRequiringTestingReplies.add(message.uid);
                 break;
             case UPDATE_ROUND:
-                incomingNeighborsInCurrentRound.add(message.uid);
                 break;
             default:
                 break;
