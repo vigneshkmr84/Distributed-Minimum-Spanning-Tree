@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.stream.Collectors;
 
 public class MinimumSpanningTree {
 
@@ -86,7 +87,7 @@ public class MinimumSpanningTree {
     Set<Integer> mstNeighbors = new HashSet<>();
 
     boolean broadcastedTestForCurrentPhase = false;
-    boolean newRoundStarted = false;
+    boolean newRoundStarted = true;
     Integer numberOfTestingRepliesReceived = 0;
     Map<Integer, List<MSTMessage>> nextRoundMessageBuffers = new HashMap<>();
     Set<Integer> incomingNeighborsInCurrentRound = new HashSet<>();
@@ -131,7 +132,9 @@ public class MinimumSpanningTree {
             if (message == null) {
                 continue;
             }
-  
+            
+            System.out.println("Processing message from " + message.uid + " " + message.round + " " + message.messageType);
+            System.out.println(incomingNeighborsInCurrentRound);
             boolean isMessageBuffered = checkMessageRound(message);
             if (isMessageBuffered) {
                 continue;
@@ -141,7 +144,9 @@ public class MinimumSpanningTree {
 
             //Handling round end
             if (incomingNeighborsInCurrentRound.size() == neighborUIDs.size()) {
+                System.out.println("Inside the round incrementer" + incomingNeighborsInCurrentRound + " " + neighborUIDs);
                 currentRound++;
+                System.out.println("Starting round "+ currentRound);
 
                 newRoundStarted = true;
                 incomingNeighborsInCurrentRound.clear();
@@ -153,13 +158,12 @@ public class MinimumSpanningTree {
     }
 
     public void handleRoundBeginning() {
-        Set<Integer> testingMessagesToLeader = null;
-        Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>(neighborUIDs);
-
-        if (neighborsAcknowledgingTestingMessages.size() > 0) {
-            testingMessagesToLeader = new HashSet<>(neighborsAcknowledgingTestingMessages);
-            testingMessagesToLeader.addAll(mstNeighborsRequestingConvergcastToLeader);
+        Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>();
+        
+        for (Integer x: neighborUIDs) {
+            nodesNotCommunicatedInThisRound.add(Integer.valueOf(x.intValue()));
         }
+
 
         if (!broadcastedTestForCurrentPhase && (config.getUID()==currentComponentId || mstTestParentMessageUID != null)) {
             System.out.println("Sending mst children to broadcast testing message and tesing the edge weights of others");
@@ -174,7 +178,6 @@ public class MinimumSpanningTree {
             nodesNotCommunicatedInThisRound.removeAll(neighborsRequiringTestingReplies);
             neighborsRequiringTestingReplies.clear();
         } 
-        
         
         // If the leader node has no children, i.e. the MST is empty.
         if (config.getUID() == currentComponentId && mstNeighbors.size() == 0 && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
@@ -215,7 +218,8 @@ public class MinimumSpanningTree {
         }
 
         if (broadcastMergeToAllNeighbors) {
-            Set<Integer> neighborsToSendMessage = new HashSet<>(mstNeighbors);
+            Set<Integer> neighborsToSendMessage = new HashSet<>();
+            neighborsToSendMessage.addAll(new HashSet<>(mstNeighbors));
             neighborsToSendMessage.remove(parentNeighborForBroadcastMerge);
 
             // This means that I am a leaf node and I should send merge message to outgoing neighbor of the message.
@@ -232,7 +236,8 @@ public class MinimumSpanningTree {
         }
 
         if (broadcastNewLeaderToNeighbors) {
-            Set<Integer> neighborsToSendMessage = new HashSet<>(mstNeighbors);
+            Set<Integer> neighborsToSendMessage = new HashSet<>();
+            neighborsToSendMessage.addAll(new HashSet<>(mstNeighbors));
             neighborsToSendMessage.remove(parentNeighborForBroadcastNewLeader);
 
             if (neighborsToSendMessage.size() != 0) {
@@ -259,6 +264,7 @@ public class MinimumSpanningTree {
             startCounterToEndPhase = false;
             broadcastedTestForCurrentPhase = false;
             System.out.print("The Phase has ended, we are moving to the new phase.");
+            countRoundsToEndPhase = 0;
             currentPhase += 1;
         }
 
@@ -267,7 +273,7 @@ public class MinimumSpanningTree {
             System.exit(0);
         }
 
-
+        System.out.println("Inside the new round handler " + nodesNotCommunicatedInThisRound + " " + neighborUIDs);
         if (nodesNotCommunicatedInThisRound.size() > 0) {
             MSTMessage updateMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
             sendMessageToSomeNeighbors(updateMessage, nodesNotCommunicatedInThisRound);
@@ -295,30 +301,19 @@ public class MinimumSpanningTree {
         if (mstNeighbors.size() > 0) {
             replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_TESTING);
             sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
-            outgoingNeighborsInCurrentRound.addAll(mstNeighbors);
+            outgoingNeighborsInCurrentRound.addAll(new HashSet<>(mstNeighbors));
         }
 
         if (neighborsAvailableForTesting.size() > 0) {
             replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TESTING_NEIGHBORS);
             sendMessageToSomeNeighbors(replyMessage, neighborsAvailableForTesting);
-            outgoingNeighborsInCurrentRound.addAll(neighborsAvailableForTesting);
-        } 
-
-        Set<Integer> remainingNodes = new HashSet<>(neighborUIDs);
-        remainingNodes.removeAll(outgoingNeighborsInCurrentRound);
-
-        if (remainingNodes.size() > 0) {
-            replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.UPDATE_ROUND);
-            sendMessageToSomeNeighbors(replyMessage, remainingNodes);
+            outgoingNeighborsInCurrentRound.addAll(new HashSet<>(neighborsAvailableForTesting));
         }
-
-        outgoingNeighborsInCurrentRound.addAll(remainingNodes);
 
         return outgoingNeighborsInCurrentRound;
     }
 
     public void handleMessage(MSTMessage message, Set<Integer> neighborsAvailableForTesting) {
-        System.out.println("Processing message from " + message.uid + " " + message.round + " " + message.messageType);
         List<Integer> messageWeight;
         incomingNeighborsInCurrentRound.add(message.uid);
 
