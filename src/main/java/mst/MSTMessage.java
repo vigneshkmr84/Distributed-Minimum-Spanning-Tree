@@ -7,7 +7,7 @@ enum MSTMessageType {
     BROADCAST_TESTING,
     TESTING_NEIGHBORS,
     TEST_MESSAGE_REPLY,
-    CONVERGECAST_MAX_TO_LEADER,
+    CONVERGECAST_MIN_TO_LEADER,
     BROADCAST_MERGE,
     MERGE_COMPONENT,
     BROADCAST_NEW_LEADER,
@@ -29,7 +29,7 @@ public class MSTMessage implements Serializable {
     // reply: used as reply for search message.
     MSTMessageType messageType;
 
-    List<Integer> maxWeight = null;
+    List<Integer> minWeight = null;
 
     public MSTMessage(int round, int uid, int componentId, MSTMessageType messageType) {
         this.round = round;
@@ -43,6 +43,6 @@ public class MSTMessage implements Serializable {
         this.uid = uid;
         this.componentId = componentId;
         this.messageType = messageType;
-        this.maxWeight = maxWeight;
+        this.minWeight = maxWeight;
     }
 }
