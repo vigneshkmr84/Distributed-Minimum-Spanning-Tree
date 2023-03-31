@@ -11,7 +11,9 @@ enum MSTMessageType {
     BROADCAST_MERGE,
     MERGE_COMPONENT,
     BROADCAST_NEW_LEADER,
-    UPDATE_ROUND
+    UPDATE_ROUND,
+    SAME_COMPONENT,
+    TERMINATE
 }
 
 public class MSTMessage implements Serializable {
