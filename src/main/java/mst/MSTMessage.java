@@ -25,6 +25,8 @@ public class MSTMessage implements Serializable {
     // leader of that component can be used as component id
     int componentId;
 
+    int roundsToTerminate;
+
     // search-reply, test, leader //
     // leader: is used when a new leader is elected to broadcast.
     // search: used by leader to check for neighbouring components.
@@ -40,11 +42,19 @@ public class MSTMessage implements Serializable {
         this.messageType = messageType;
     }
 
-    public MSTMessage(int round, int uid, int componentId, MSTMessageType messageType, List<Integer> maxWeight) {
+    public MSTMessage(int round, int uid, int componentId, MSTMessageType messageType, int roundsToTerminate) {
         this.round = round;
         this.uid = uid;
         this.componentId = componentId;
         this.messageType = messageType;
-        this.minWeight = maxWeight;
+        this.roundsToTerminate = roundsToTerminate;
+    }
+
+    public MSTMessage(int round, int uid, int componentId, MSTMessageType messageType, List<Integer> minWeight) {
+        this.round = round;
+        this.uid = uid;
+        this.componentId = componentId;
+        this.messageType = messageType;
+        this.minWeight = minWeight;
     }
 }

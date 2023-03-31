@@ -116,6 +116,10 @@ public class MinimumSpanningTree {
     Boolean broadcastMergeRequest = false;
     Integer parentForBroadcastMerge = null;
 
+    Boolean receivedTermination = false;
+    Integer terminationClock = 0;
+
+
     public void runMST() {
         // if uid == component_id, first initiate a broadcast message to all neighbours (at the start, all nodes will do this)
 
@@ -162,25 +166,39 @@ public class MinimumSpanningTree {
     public void handleRoundBeginning() {
         Set<Integer> nodesCommunicatedInThisRound = new HashSet<>();
 
+        if(receivedTermination){
+            System.out.println("Node Terminated, MST Finished: " + mstNeighbors);
+
+            terminationClock++;
+            MSTMessage terminationMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TERMINATE, terminationClock);
+            sendMessageToSomeNeighbors(terminationMessage, mstNeighbors);
+            nodesCommunicatedInThisRound.addAll(mstNeighbors);
+
+            if(terminationClock == config.getTotalNodes()){
+                System.exit(0);
+            }
+        }
+
         if (!broadcastedTestForCurrentPhase && (config.getUID()==currentComponentId || mstTestParentMessageUID != null)) {
             System.out.println("Sending mst children to broadcast testing message and tesing the edge weights of others");
             Set<Integer> outgoingNeighbors = handleBroadcastTesting();
             broadcastedTestForCurrentPhase = true;
             nodesCommunicatedInThisRound.addAll(outgoingNeighbors);
-        } else if (neighborsRequiringTestingReplies.size() > 0) {
-            MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TEST_MESSAGE_REPLY);
-            sendMessageToSomeNeighbors(replyMessage, neighborsRequiringTestingReplies);
-            nodesCommunicatedInThisRound.addAll(neighborsRequiringTestingReplies);
-            neighborsRequiringTestingReplies.clear();
         }
-
-//        if(sameComponent.size() > 0){
-//            MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.SAME_COMPONENT);
-//            sendMessageToSomeNeighbors(replyMessage, sameComponent);
-//            nodesCommunicatedInThisRound.addAll(sameComponent);
-//            sameComponent.clear();
-//        }
-        
+        else{
+            if (neighborsRequiringTestingReplies.size() > 0) {
+                MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TEST_MESSAGE_REPLY);
+                sendMessageToSomeNeighbors(replyMessage, neighborsRequiringTestingReplies);
+                nodesCommunicatedInThisRound.addAll(neighborsRequiringTestingReplies);
+                neighborsRequiringTestingReplies.clear();
+            }
+            if(sameComponent.size() > 0){
+                MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.SAME_COMPONENT);
+                sendMessageToSomeNeighbors(replyMessage, sameComponent);
+                nodesCommunicatedInThisRound.addAll(sameComponent);
+                sameComponent.clear();
+            }
+        }
         // If the leader node has no children, i.e. the MST is empty.
         if (config.getUID() == currentComponentId && mstNeighbors.size() == 0 && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
             
@@ -192,7 +210,12 @@ public class MinimumSpanningTree {
         else if (config.getUID() == currentComponentId && mstNeighbors.size() > 0 && mstNeighborsRequestingConvergcastToLeader.equals(mstNeighbors) && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
             System.out.println("The minimum weight edge inside is" + outgoingNeighborsMinWeight);
             if (outgoingNeighborsMinWeight == null){
-                // TODO: TERMINATION
+                receivedTermination = true;
+                terminationClock = 1;
+                MSTMessage terminationMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TERMINATE, terminationClock);
+                sendMessageToSomeNeighbors(terminationMessage, mstNeighbors);
+                nodesCommunicatedInThisRound.addAll(mstNeighbors);
+                System.out.println("Node Terminated, MST Finished: " + mstNeighbors);
             }
             else if (neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(1)) || neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(2))) {
                 Integer newNode = handleMergeMessage();
@@ -280,11 +303,10 @@ public class MinimumSpanningTree {
             currentPhase += 1;
             System.out.println("Neighbors Available for Testing "+ neighborsAvailableForTesting);
         }
-
-         //Temp code to test how the MST algorithm works. (Currently Runs forever)
-         if (currentPhase == 6) {
-             System.exit(0);
-         }
+//
+//         if (currentRound == 94) {
+//             System.exit(0);
+//         }
 
         Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>(neighborUIDs);
         nodesNotCommunicatedInThisRound.removeAll(nodesCommunicatedInThisRound);
@@ -370,8 +392,9 @@ public class MinimumSpanningTree {
                 mstNeighborsRequestingConvergcastToLeader.add(message.uid);
                 
                 messageWeight = message.minWeight;
-                outgoingNeighborsMinWeight = outgoingNeighborsMinWeight==null ? 
+                outgoingNeighborsMinWeight = outgoingNeighborsMinWeight==null ?
                     messageWeight : MSTUtils.compareWeights(messageWeight, outgoingNeighborsMinWeight);
+                System.out.println("CONVERGECAST weight" + messageWeight);
                 break;
             case MERGE_COMPONENT:
                 if (!expectingBroadcastMerge) {
@@ -380,32 +403,38 @@ public class MinimumSpanningTree {
                     neighborsAvailableForTesting.remove(message.uid);
                 }
                 mergeMessageSenders.add(message.uid);
+
+                System.out.println("MERGE_COMPONENT DATA");
+                System.out.println(mergeMessageRecipient);
+                System.out.println(mergeMessageSenders.size());
+                System.out.println(mergeMessageSenders + " " + mergeMessageRecipient);
+
                 break;
             case SAME_COMPONENT:
-
-                System.out.println("~~~SAME COMPONENT~~~~");
+                System.out.println("~~~BEFORE SAME COMPONENT~~~~");
                 System.out.println(mstNeighbors);
-                System.out.println(neighborsRequiringTestingReplies);
+                System.out.println(neighborsAvailableForTesting);
                 System.out.println(neighborsAcknowledgingTestingMessages);
-                neighborsRequiringTestingReplies.remove(message.uid);
+                neighborsAvailableForTesting.remove(message.uid);
                 neighborsAcknowledgingTestingMessages.remove(message.uid);
                 System.out.println("~~~AFTER~~~~");
                 System.out.println(mstNeighbors);
-                System.out.println(neighborsRequiringTestingReplies);
+                System.out.println(neighborsAvailableForTesting);
                 System.out.println(neighborsAcknowledgingTestingMessages);
                 break;
             case TESTING_NEIGHBORS:
-                //if(message.componentId == currentComponentId){
-                //   sameComponent.add(message.uid);
-                //}
-                //else{
+                if(message.componentId == currentComponentId){
+                   sameComponent.add(message.uid);
+                }
+                else{
                     neighborsRequiringTestingReplies.add(message.uid);
-                //}
+                }
                 break;
             case UPDATE_ROUND:
                 break;
             case TERMINATE:
-                System.out.println("Node Terminated, MST Finished: " + mstNeighbors);
+                receivedTermination = true;
+                terminationClock = message.roundsToTerminate;
                 break;
             default:
                 break;
