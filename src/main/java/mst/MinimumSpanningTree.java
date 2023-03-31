@@ -295,12 +295,12 @@ public class MinimumSpanningTree {
         }
 
         if ((currentRound % (6 * config.getTotalNodes())) == 0) {
+            currentPhase += 1;
             System.out.println("The current phase has ended. Beginning phase " + currentPhase);
             System.out.println("The MST neighbors for this phase are " + mstNeighbors);
             System.out.println("My component ID is " + currentComponentId);
             broadcastedTestForCurrentPhase = false;
             outgoingNeighborsMinWeight = null;
-            currentPhase += 1;
             System.out.println("Neighbors Available for Testing "+ neighborsAvailableForTesting);
         }
 //
