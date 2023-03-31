@@ -30,16 +30,19 @@ public class MinimumSpanningTree {
     private Map<Integer, ObjectOutputStream> objectOutputStreams;
     Set<Integer> neighborUIDs;
     Set<Integer> neighborsAvailableForTesting;
+    public int uid;
 
     public MinimumSpanningTree(ConfigParser configParser) {
         this.messageQueue = new LinkedBlockingQueue<>();
         this.currentRound = 1;
         this.currentComponentId = configParser.getUID();
+        this.uid = configParser.getUID();
         this.config = configParser;
         this.objectOutputStreams = new HashMap<>();
         Set<Integer> tempSet = Collections.unmodifiableSet(config.getNeighbourNodeHostDetails().keySet());
         this.neighborUIDs = new HashSet<>(tempSet);
         this.neighborsAvailableForTesting = new HashSet<>(tempSet);
+        System.out.println("UID: " + uid);
     }
 
     public void start() {
@@ -100,9 +103,9 @@ public class MinimumSpanningTree {
     Set<Integer> neighborsAcknowledgingTestingMessages = new HashSet<>();
     Set<Integer> mstNeighborsRequestingConvergcastToLeader = new HashSet<>();
     Set<Integer> acknowledgeMergeToComponent = new HashSet<>();
+    Set<Integer> sameComponent = new HashSet<>();
     List<Integer> outgoingNeighborsMinWeight = null;
 
-    //Variables related to the merge operation
     Integer mergeMessageRecipient = null; //Node that receives our merge component message if we send any.
     Set<Integer> mergeMessageSenders = new HashSet<>(); //Node that has sent us a merge component message. Note that multiple nodes can send us this message.
 
@@ -169,7 +172,14 @@ public class MinimumSpanningTree {
             sendMessageToSomeNeighbors(replyMessage, neighborsRequiringTestingReplies);
             nodesCommunicatedInThisRound.addAll(neighborsRequiringTestingReplies);
             neighborsRequiringTestingReplies.clear();
-        } 
+        }
+
+//        if(sameComponent.size() > 0){
+//            MSTMessage replyMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.SAME_COMPONENT);
+//            sendMessageToSomeNeighbors(replyMessage, sameComponent);
+//            nodesCommunicatedInThisRound.addAll(sameComponent);
+//            sameComponent.clear();
+//        }
         
         // If the leader node has no children, i.e. the MST is empty.
         if (config.getUID() == currentComponentId && mstNeighbors.size() == 0 && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
@@ -181,7 +191,10 @@ public class MinimumSpanningTree {
         } //The leader is part of a MST and all the children and his other neighbors have acknowledged the testing message.
         else if (config.getUID() == currentComponentId && mstNeighbors.size() > 0 && mstNeighborsRequestingConvergcastToLeader.equals(mstNeighbors) && neighborsAcknowledgingTestingMessages.equals(neighborsAvailableForTesting)) {
             System.out.println("The minimum weight edge inside is" + outgoingNeighborsMinWeight);
-            if (neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(1)) || neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(2))) {
+            if (outgoingNeighborsMinWeight == null){
+                // TODO: TERMINATION
+            }
+            else if (neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(1)) || neighborsAcknowledgingTestingMessages.contains(outgoingNeighborsMinWeight.get(2))) {
                 Integer newNode = handleMergeMessage();
                 nodesCommunicatedInThisRound.add(newNode);
             } else {
@@ -198,16 +211,17 @@ public class MinimumSpanningTree {
             MSTMessage convergecastMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.CONVERGECAST_MIN_TO_LEADER, outgoingNeighborsMinWeight);
             sendMessageToSomeNeighbors(convergecastMessage, new HashSet<Integer>(Arrays.asList(mstTestParentMessageUID)));
 
-            nodesCommunicatedInThisRound.add(mstTestParentMessageUID);
-            mstNeighbors.add(mstTestParentMessageUID);
-            
+            if(mstTestParentMessageUID != null && mstTestParentMessageUID != uid) {
+                nodesCommunicatedInThisRound.add(mstTestParentMessageUID);
+                mstNeighbors.add(mstTestParentMessageUID);
+            }
             expectingBroadcastMerge = true;
             mstTestParentMessageUID = null;
             mstNeighborsRequestingConvergcastToLeader.clear();
             neighborsAcknowledgingTestingMessages.clear();
         }
 
-        if (broadcastMergeRequest) {
+        else if (broadcastMergeRequest) {
             if (mstNeighbors.size() > 0) {
                 MSTMessage broadcastMergeMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_MERGE, outgoingNeighborsMinWeight);
                 sendMessageToSomeNeighbors(broadcastMergeMessage, mstNeighbors);
@@ -223,11 +237,14 @@ public class MinimumSpanningTree {
             // We want to add neighbors who contacted us before the broadcast merge to our component only after it is completed.
             if (mergeMessageSenders.size() > 0) {
                 mstNeighbors.addAll(mergeMessageSenders);
+                mstNeighbors.remove(uid);
                 neighborsAvailableForTesting.removeAll(mergeMessageSenders);
                 expectingBroadcastMerge = false;
             }
 
-            mstNeighbors.add(parentForBroadcastMerge);
+            if(parentForBroadcastMerge != uid)
+                mstNeighbors.add(parentForBroadcastMerge);
+
             parentForBroadcastMerge = null;
             broadcastMergeRequest = false;
         } else if (mergeMessageRecipient!=null && mergeMessageSenders.size()>0 && mergeMessageSenders.contains(mergeMessageRecipient)) {
@@ -244,29 +261,30 @@ public class MinimumSpanningTree {
             mergeMessageSenders.clear();
         }
 
-        if (broadcastNewLeaderToNeighbors) {
+        else if (broadcastNewLeaderToNeighbors) {
             MSTMessage broadcastLeaderMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_NEW_LEADER);
             sendMessageToSomeNeighbors(broadcastLeaderMessage, mstNeighbors);
             nodesCommunicatedInThisRound.addAll(mstNeighbors);
-
-            mstNeighbors.add(parentForBroadcastNewLeader);
+            if(parentForBroadcastNewLeader != uid)
+                mstNeighbors.add(parentForBroadcastNewLeader);
             parentForBroadcastNewLeader = null;
             broadcastNewLeaderToNeighbors = false;   
         }
 
         if ((currentRound % (6 * config.getTotalNodes())) == 0) {
-            System.out.println("The current phase has ended. Beginning new phase.");
+            System.out.println("The current phase has ended. Beginning phase " + currentPhase);
             System.out.println("The MST neighbors for this phase are " + mstNeighbors);
             System.out.println("My component ID is " + currentComponentId);
             broadcastedTestForCurrentPhase = false;
             outgoingNeighborsMinWeight = null;
             currentPhase += 1;
+            System.out.println("Neighbors Available for Testing "+ neighborsAvailableForTesting);
         }
 
-        // //Temp code to test how the MST algorithm works.
-        // if (currentPhase == 3) {
-        //     System.exit(0);
-        // }
+         //Temp code to test how the MST algorithm works. (Currently Runs forever)
+         if (currentPhase == 6) {
+             System.exit(0);
+         }
 
         Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>(neighborUIDs);
         nodesNotCommunicatedInThisRound.removeAll(nodesCommunicatedInThisRound);
@@ -283,11 +301,13 @@ public class MinimumSpanningTree {
 
         Integer nodeToSendMergeMessage = neighborsAvailableForTesting.contains(outgoingNeighborsMinWeight.get(1)) 
                         ? outgoingNeighborsMinWeight.get(1) : outgoingNeighborsMinWeight.get(2);
-        System.out.println("Sending merge component message to " + nodeToSendMergeMessage);
-        mergeMessageRecipient = nodeToSendMergeMessage;                    
-        sendMessageToSomeNeighbors(mergeMessage, new HashSet<Integer>(Arrays.asList(nodeToSendMergeMessage)));
-
-        mstNeighbors.add(nodeToSendMergeMessage);
+        if(nodeToSendMergeMessage != uid){
+            System.out.println("Sending merge component message to " + nodeToSendMergeMessage);
+            mergeMessageRecipient = nodeToSendMergeMessage;
+            sendMessageToSomeNeighbors(mergeMessage, new HashSet<Integer>(Arrays.asList(nodeToSendMergeMessage)));
+            if(nodeToSendMergeMessage != uid)
+                mstNeighbors.add(nodeToSendMergeMessage);
+        }
         neighborsAvailableForTesting.remove(nodeToSendMergeMessage);
 
         return nodeToSendMergeMessage;
@@ -355,15 +375,37 @@ public class MinimumSpanningTree {
                 break;
             case MERGE_COMPONENT:
                 if (!expectingBroadcastMerge) {
-                    mstNeighbors.add(message.uid);
+                    if(message.uid != uid)
+                        mstNeighbors.add(message.uid);
                     neighborsAvailableForTesting.remove(message.uid);
                 }
                 mergeMessageSenders.add(message.uid);
                 break;
+            case SAME_COMPONENT:
+
+                System.out.println("~~~SAME COMPONENT~~~~");
+                System.out.println(mstNeighbors);
+                System.out.println(neighborsRequiringTestingReplies);
+                System.out.println(neighborsAcknowledgingTestingMessages);
+                neighborsRequiringTestingReplies.remove(message.uid);
+                neighborsAcknowledgingTestingMessages.remove(message.uid);
+                System.out.println("~~~AFTER~~~~");
+                System.out.println(mstNeighbors);
+                System.out.println(neighborsRequiringTestingReplies);
+                System.out.println(neighborsAcknowledgingTestingMessages);
+                break;
             case TESTING_NEIGHBORS:
-                neighborsRequiringTestingReplies.add(message.uid);
+                //if(message.componentId == currentComponentId){
+                //   sameComponent.add(message.uid);
+                //}
+                //else{
+                    neighborsRequiringTestingReplies.add(message.uid);
+                //}
                 break;
             case UPDATE_ROUND:
+                break;
+            case TERMINATE:
+                System.out.println("Node Terminated, MST Finished: " + mstNeighbors);
                 break;
             default:
                 break;
@@ -408,12 +450,13 @@ public class MinimumSpanningTree {
     //send message to a specific neighbors
     public void sendMessageToSomeNeighbors(MSTMessage m, Set<Integer> neighborUIDSet) {
         ObjectOutputStream objectOutputStream;
-
         try {
             for (Integer neighborUID: neighborUIDSet) {
-                objectOutputStream = objectOutputStreams.get(neighborUID);
-                objectOutputStream.writeObject(m);
-                objectOutputStream.flush();
+                if(neighborUID != null){
+                    objectOutputStream = objectOutputStreams.get(neighborUID);
+                    objectOutputStream.writeObject(m);
+                    objectOutputStream.flush();
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
