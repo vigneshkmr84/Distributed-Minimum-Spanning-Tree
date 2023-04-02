@@ -120,6 +120,7 @@ public class MinimumSpanningTree {
     Integer terminationClock = 0;
 
 
+
     public void runMST() {
         // if uid == component_id, first initiate a broadcast message to all neighbours (at the start, all nodes will do this)
 
@@ -167,7 +168,6 @@ public class MinimumSpanningTree {
         Set<Integer> nodesCommunicatedInThisRound = new HashSet<>();
 
         if(receivedTermination){
-            System.out.println("Node Terminated, MST Finished: " + mstNeighbors);
 
             terminationClock++;
             MSTMessage terminationMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.TERMINATE, terminationClock);
@@ -175,6 +175,9 @@ public class MinimumSpanningTree {
             nodesCommunicatedInThisRound.addAll(mstNeighbors);
 
             if(terminationClock == config.getTotalNodes()){
+                System.out.println("Node with uid " + uid + " has finished building the MST");
+                System.out.println("This node is part of the component with leader uid " + currentComponentId);
+                System.out.println("*** MST Neighbors Final Output: " + mstNeighbors + " ***");
                 System.exit(0);
             }
         }
