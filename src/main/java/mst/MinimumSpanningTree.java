@@ -286,7 +286,6 @@ public class MinimumSpanningTree {
             mergeMessageRecipient = null;
             mergeMessageSenders.clear();
         }
-
         else if (broadcastNewLeaderToNeighbors) {
             MSTMessage broadcastLeaderMessage = new MSTMessage(currentRound, config.getUID(), currentComponentId, MSTMessageType.BROADCAST_NEW_LEADER);
             sendMessageToSomeNeighbors(broadcastLeaderMessage, mstNeighbors);
@@ -299,6 +298,22 @@ public class MinimumSpanningTree {
 
         if ((currentRound % (6 * config.getTotalNodes())) == 0) {
             currentPhase += 1;
+
+            if (parentForBroadcastMerge != null)
+                mstNeighbors.add(parentForBroadcastMerge);
+            
+            if (parentForBroadcastNewLeader != null)
+                mstNeighbors.add(parentForBroadcastNewLeader);
+
+            if (mstTestParentMessageUID != null)
+                mstNeighbors.add(mstTestParentMessageUID);
+
+            parentForBroadcastMerge = null;
+            parentForBroadcastNewLeader = null;
+            mstTestParentMessageUID = null;
+            broadcastNewLeaderToNeighbors = false;
+            expectingBroadcastMerge = false;
+
             System.out.println("The current phase has ended. Beginning phase " + currentPhase);
             System.out.println("The MST neighbors for this phase are " + mstNeighbors);
             System.out.println("My component ID is " + currentComponentId);
@@ -306,10 +321,6 @@ public class MinimumSpanningTree {
             outgoingNeighborsMinWeight = null;
             System.out.println("Neighbors Available for Testing "+ neighborsAvailableForTesting);
         }
-//
-//         if (currentRound == 94) {
-//             System.exit(0);
-//         }
 
         Set<Integer> nodesNotCommunicatedInThisRound = new HashSet<>(neighborUIDs);
         nodesNotCommunicatedInThisRound.removeAll(nodesCommunicatedInThisRound);
