@@ -1,5 +1,5 @@
 # DC-Minimum-Spanning-Tree
-Minimum Spanning Tree in Distributed Computing
+This repository contains the code to construct a minimum spanning tree across nodes in a network using the GHS algorithm. The purpose of the minimum spanning tree is to choose edges based on weights/network distance etc so that we can the lowest communication cost. Since many nodes are concurrently added to the MST, it is expected to be faster than traditional MST construction algorithms like Prims or Kruskals.
 
 Team Members: Trent Haines(tsh160230), Kamalesh Palanisamy(kxp210004), Vignesh Thirunavukkarasu(vxt200003)
 
